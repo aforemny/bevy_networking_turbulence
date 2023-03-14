@@ -1,10 +1,11 @@
 // Arg parser for the examples.
-// 
+//
 // each example gets a different Args struct, which it adds as a bevy resource
 
 use clap::{Arg, App as ClapApp, value_t_or_exit};
+use bevy::prelude::Resource;
 
-#[derive(Debug)]
+#[derive(Debug,Resource)]
 pub struct SimpleArgs {
     pub is_server: bool,
 }
@@ -134,7 +135,7 @@ fn timeout_args<'a>() -> Vec<Arg<'a, 'a>> {
         .default_value("1000")
         .takes_value(true)
         .required(false)
-    ]   
+    ]
 }
 
 #[allow(dead_code)]

@@ -110,7 +110,7 @@ pub trait Connection: Send + Sync {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub struct ServerConnection {
-    task_pool: TaskPool,
+    task_pool: &'static TaskPool,
 
     packet_rx: crossbeam_channel::Receiver<Result<Packet, NetworkError>>,
     sender: Option<ServerSender>,
@@ -126,7 +126,7 @@ pub struct ServerConnection {
 #[cfg(not(target_arch = "wasm32"))]
 impl ServerConnection {
     pub fn new(
-        task_pool: TaskPool,
+        task_pool: &'static TaskPool,
         packet_rx: crossbeam_channel::Receiver<Result<Packet, NetworkError>>,
         sender: ServerSender,
         client_address: SocketAddr,
@@ -240,7 +240,7 @@ impl Connection for ServerConnection {
 }
 
 pub struct ClientConnection {
-    task_pool: TaskPool,
+    task_pool: &'static TaskPool,
 
     socket: Box<dyn ClientSocketTrait>,
     sender: Option<ClientSender>,
@@ -254,7 +254,7 @@ pub struct ClientConnection {
 
 impl ClientConnection {
     pub fn new(
-        task_pool: TaskPool,
+        task_pool: &'static TaskPool,
         socket: Box<dyn ClientSocketTrait>,
         sender: ClientSender,
     ) -> Self {

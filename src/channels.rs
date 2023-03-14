@@ -23,13 +23,13 @@ impl BufferPool for SimpleBufferPool {
 pub struct TaskPoolRuntime(Arc<TaskPoolRuntimeInner>);
 
 pub struct TaskPoolRuntimeInner {
-    pool: TaskPool,
+    pool: &'static TaskPool,
     #[cfg(not(target_arch = "wasm32"))]
     tasks: Mutex<Vec<Task<()>>>, // FIXME: cleanup finished
 }
 
 impl TaskPoolRuntime {
-    pub fn new(pool: TaskPool) -> Self {
+    pub fn new(pool: &'static TaskPool) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         {
             TaskPoolRuntime(Arc::new(TaskPoolRuntimeInner {

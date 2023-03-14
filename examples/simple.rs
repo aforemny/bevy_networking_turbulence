@@ -1,4 +1,4 @@
-use bevy::{app::ScheduleRunnerSettings, log::LogPlugin, prelude::*};
+use bevy::{app::ScheduleRunnerSettings, log::{LogPlugin,Level}, prelude::*};
 use bevy_networking_turbulence::{NetworkEvent, NetworkResource, NetworkingPlugin, Packet};
 
 use std::{net::SocketAddr, time::Duration};
@@ -15,14 +15,14 @@ fn main() {
             1.0 / 60.0,
         )))
         .add_plugins(MinimalPlugins)
-        .add_plugin(LogPlugin)
+        .add_plugin(LogPlugin { filter: "".to_string(), level: Level::DEBUG })
         // The NetworkingPlugin
         .add_plugin(NetworkingPlugin::default())
         // Our networking
         .insert_resource(parse_simple_args())
-        .add_startup_system(startup.system())
-        .add_system(send_packets.system())
-        .add_system(handle_packets.system())
+        .add_startup_system(startup)
+        .add_system(send_packets)
+        .add_system(handle_packets)
         .run();
 }
 
@@ -31,8 +31,8 @@ fn startup(mut net: ResMut<NetworkResource>, args: Res<Args>) {
         if #[cfg(target_arch = "wasm32")] {
             // set the following address to your server address (i.e. local machine)
             // and remove compile_error! line
-            let mut server_address: SocketAddr = "192.168.1.1:0".parse().unwrap();
-            compile_error!("You need to set server_address.");
+            let mut server_address: SocketAddr = "192.168.1.101:14191".parse().unwrap();
+            // compile_error!("You need to set server_address.");
             server_address.set_port(SERVER_PORT);
         } else {
             let ip_address =
@@ -55,7 +55,7 @@ fn startup(mut net: ResMut<NetworkResource>, args: Res<Args>) {
 fn send_packets(mut net: ResMut<NetworkResource>, time: Res<Time>, args: Res<Args>) {
     if !args.is_server {
         // Client context
-        if (time.seconds_since_startup() * 60.) as i64 % 60 == 0 {
+        if (time.elapsed_seconds() * 60.) as i64 % 60 == 0 {
             info!("PING");
             net.broadcast(Packet::from("PING"));
         }
@@ -72,7 +72,7 @@ fn handle_packets(
                 let message = String::from_utf8_lossy(packet);
                 info!("Got packet on [{}]: {}", handle, message);
                 if message == "PING" {
-                    let message = format!("PONG @ {}", time.seconds_since_startup());
+                    let message = format!("PONG @ {}", time.elapsed_seconds());
                     match net.send(*handle, Packet::from(message)) {
                         Ok(()) => {
                             info!("Sent PONG");

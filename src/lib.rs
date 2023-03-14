@@ -1,8 +1,8 @@
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::tasks::Task;
 use bevy::{
-    app::{App, CoreStage, Events, Plugin},
-    core::FixedTimestep,
+    app::{App, CoreSet, Plugin},
+    ecs::event::Events,
     prelude::*,
     tasks::{IoTaskPool, TaskPool},
 };
@@ -15,6 +15,7 @@ use std::{
     error::Error,
     fmt::Debug,
     net::SocketAddr,
+    ops::Deref,
     sync::{atomic, Arc, Mutex},
 };
 
@@ -47,7 +48,7 @@ pub use transport::{Connection, ConnectionChannelsBuilder, Packet};
 
 pub type ConnectionHandle = u32;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 struct SendHeartbeatsStage;
 
 #[derive(Default)]
@@ -60,23 +61,11 @@ pub struct NetworkingPlugin {
     /// these are sent silently, and discarded, so you won't see them in your bevy systems.
     /// if auto_heartbeat_ms elapses, and we haven't sent anything else in that time, we send one.
     pub auto_heartbeat_ms: Option<usize>,
-    /// FixedTimestep for the `heartbeats_and_timeouts` system which checks for idle connections
-    /// and sends heartbeats. Does not need to be every frame.
-    ///
-    /// The `heartbeats_and_timeouts` system is only added if `idle_timeout_ms` or `auto_heartbeat_ms` are specified.
-    ///
-    /// Default if None: 0.5 secs
-    pub heartbeats_and_timeouts_timestep_in_seconds: Option<f64>,
 }
 
 impl Plugin for NetworkingPlugin {
     fn build(&self, app: &mut App) {
-        let task_pool = app
-            .world
-            .get_resource::<IoTaskPool>()
-            .expect("`IoTaskPool` resource not found.")
-            .0
-            .clone();
+        let task_pool = IoTaskPool::get().deref();
 
         app.insert_resource(NetworkResource::new(
             task_pool,
@@ -86,19 +75,19 @@ impl Plugin for NetworkingPlugin {
             self.auto_heartbeat_ms,
         ))
         .add_event::<NetworkEvent>()
-        .add_system(receive_packets.system());
+        .add_system(receive_packets);
         if self.idle_timeout_ms.is_some() || self.auto_heartbeat_ms.is_some() {
             // heartbeats and timeouts checking/sending only runs infrequently:
-            app.add_stage_after(
-                CoreStage::Update,
-                SendHeartbeatsStage,
-                SystemStage::parallel()
-                    .with_run_criteria(FixedTimestep::step(
-                        self.heartbeats_and_timeouts_timestep_in_seconds
-                            .unwrap_or(0.5),
-                    ))
-                    .with_system(heartbeats_and_timeouts.system()),
-            );
+            app
+                .configure_set(
+                    SendHeartbeatsStage
+                    .after(CoreSet::PostUpdate)
+                )
+                .add_system(
+                    heartbeats_and_timeouts
+                    .in_set(SendHeartbeatsStage)
+                    .in_schedule(CoreSchedule::FixedUpdate)
+                );
         }
     }
 }
@@ -106,8 +95,9 @@ impl Plugin for NetworkingPlugin {
 #[cfg(not(target_arch = "wasm32"))]
 type ServerChannels = HashMap<SocketAddr, Sender<Result<Packet, NetworkError>>>;
 
+#[derive(Resource)]
 pub struct NetworkResource {
-    task_pool: TaskPool,
+    task_pool: &'static TaskPool,
 
     pending_connections: Arc<Mutex<Vec<Box<dyn Connection>>>>,
     connection_sequence: atomic::AtomicU32,
@@ -186,13 +176,13 @@ unsafe impl Sync for NetworkResource {}
 
 impl NetworkResource {
     pub fn new(
-        task_pool: TaskPool,
+        task_pool: &'static TaskPool,
         link_conditioner: Option<LinkConditionerConfig>,
         message_flushing_strategy: MessageFlushingStrategy,
         idle_timeout_ms: Option<usize>,
         auto_heartbeat_ms: Option<usize>,
     ) -> Self {
-        let runtime = TaskPoolRuntime::new(task_pool.clone());
+        let runtime = TaskPoolRuntime::new(task_pool);
         let packet_pool =
             MuxPacketPool::new(BufferPacketPool::new(SimpleBufferPool(MAX_PACKET_LEN)));
 
@@ -337,7 +327,7 @@ impl NetworkResource {
             .lock()
             .unwrap()
             .push(Box::new(transport::ClientConnection::new(
-                self.task_pool.clone(),
+                self.task_pool,
                 client_socket,
                 sender,
             )));
